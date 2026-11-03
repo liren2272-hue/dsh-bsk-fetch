@@ -1,0 +1,12 @@
+# 把本插件插进 DSH profile 的配置树（bundle 挂载声明）。
+#
+# 想改默认等待/轮数/落盘目录，不必改这里：给这条 entry 加 config 即可：
+#   - id: dsh-bsk-fetch
+#     name: dsh-bsk-fetch
+#     config:
+#       waitMs: 40000
+#       rounds: 6
+#       outputDir: 'D:/data/bsk-fetch'
+- insert:
+    - id: dsh-bsk-fetch
+      name: dsh-bsk-fetch

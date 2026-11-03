@@ -1,0 +1,14 @@
+# dependencies
+node_modules/
+
+# runtime temp
+data/
+
+# unused scaffolding (plugin is pure Node.js)
+python/
+
+# misc
+*.log
+.DS_Store
+.idea/
+.vscode/
