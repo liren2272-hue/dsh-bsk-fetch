@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>模拟图形点选验证码</title>
+<style>
+  body { font-family: system-ui, sans-serif; background: #f5f6f8; padding: 24px; }
+  .wrap { max-width: 420px; margin: 0 auto; background: #fff; border-radius: 10px; padding: 20px; box-shadow: 0 2px 12px rgba(0,0,0,.08); }
+  h1 { font-size: 17px; margin: 0 0 6px; }
+  p.tip { color: #555; font-size: 13px; margin: 0 0 14px; }
+  canvas { display: block; border: 1px solid #dcdfe6; border-radius: 6px; cursor: crosshair; }
+  #status { margin-top: 14px; font-size: 14px; min-height: 22px; }
+  .ok { color: #16a34a; font-weight: 600; }
+  .bad { color: #dc2626; }
+  button { margin-top: 10px; padding: 7px 14px; font-size: 13px; border: 1px solid #c8ccd4; background: #fff; border-radius: 6px; cursor: pointer; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>请按提示点选图形</h1>
+  <p class="tip" id="prompt">点击所有圆形</p>
+  <canvas id="cv" width="300" height="300"></canvas>
+  <div id="status">未完成</div>
+  <button id="reset">换一题</button>
+</div>
+<script>
+(function () {
+  const cv = document.getElementById('cv');
+  const ctx = cv.getContext('2d');
+  const statusEl = document.getElementById('status');
+  const promptEl = document.getElementById('prompt');
+  let shapes = [];      // {x, y, r, kind}
+  let hits = [];        // 已点中的索引
+  let target = 'circle';
+
+  function draw() {
+    ctx.clearRect(0, 0, cv.width, cv.height);
+    // 背景网格，增加视觉复杂度
+    ctx.fillStyle = '#fbfcfe';
+    ctx.fillRect(0, 0, cv.width, cv.height);
+    ctx.strokeStyle = '#eef1f6';
+    ctx.lineWidth = 1;
+    for (let i = 0; i < cv.width; i += 30) {
+      ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, cv.height); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(cv.width, i); ctx.stroke();
+    }
+    shapes.forEach((s, i) => {
+      ctx.beginPath();
+      if (s.kind === 'circle') {
+        ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+      } else if (s.kind === 'square') {
+        ctx.rect(s.x - s.r, s.y - s.r, s.r * 2, s.r * 2);
+      } else {
+        // triangle
+        ctx.moveTo(s.x, s.y - s.r);
+        ctx.lineTo(s.x + s.r, s.y + s.r);
+        ctx.lineTo(s.x - s.r, s.y + s.r);
+        ctx.closePath();
+      }
+      ctx.fillStyle = s.kind === 'circle' ? '#2b6cb0'
+        : s.kind === 'square' ? '#c05621' : '#2f855a';
+      ctx.globalAlpha = hits.includes(i) ? 0.35 : 1;
+      ctx.fill();
+      ctx.globalAlpha = 1;
+      ctx.strokeStyle = hits.includes(i) ? '#16a34a' : 'rgba(0,0,0,.25)';
+      ctx.lineWidth = hits.includes(i) ? 3 : 1;
+      ctx.stroke();
+    });
+  }
+
+  function reset() {
+    const kinds = ['circle', 'square', 'triangle'];
+    target = kinds[Math.floor(Math.random() * kinds.length)];
+    promptEl.textContent = '点击所有' + (target === 'circle' ? '圆形' : target === 'square' ? '方形' : '三角形');
+    shapes = [];
+    hits = [];
+    // 固定 8 个位置，随机分配图形，保证不重叠且可点
+    const slots = [
+      [55, 55], [150, 50], [245, 58],
+      [52, 150], [150, 150], [248, 150],
+      [55, 245], [152, 245], [246, 244],
+    ];
+    slots.forEach(([x, y]) => {
+      const kind = kinds[Math.floor(Math.random() * kinds.length)];
+      shapes.push({ x, y, r: 26, kind });
+    });
+    // 保证至少 2 个目标图形
+    const tCount = shapes.filter(s => s.kind === target).length;
+    if (tCount < 2) {
+      let need = 2 - tCount;
+      for (const s of shapes) {
+        if (need <= 0) break;
+        if (s.kind !== target) { s.kind = target; need--; }
+      }
+    }
+    statusEl.textContent = '未完成';
+    statusEl.className = '';
+    window.__captchaSolved = false;
+    draw();
+  }
+
+  cv.addEventListener('click', (e) => {
+    const rect = cv.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    const idx = shapes.findIndex(s => Math.hypot(s.x - x, s.y - y) <= s.r + 4);
+    if (idx < 0) return;
+    if (hits.includes(idx)) return;
+    hits.push(idx);
+    draw();
+    const targets = shapes.map((s, i) => s.kind === target ? i : -1).filter(i => i >= 0);
+    const done = targets.every(i => hits.includes(i));
+    if (done) {
+      window.__captchaSolved = true;
+      statusEl.textContent = '验证通过';
+      statusEl.className = 'ok';
+    } else {
+      statusEl.textContent = '已点 ' + hits.length + ' 个，继续';
+    }
+  });
+
+  document.getElementById('reset').addEventListener('click', reset);
+
+  // 供脚本读取的题目信息（模拟真实验证码站点不会暴露，这里仅便于自动化核对）
+  window.__captchaMeta = () => ({
+    target,
+    solved: !!window.__captchaSolved,
+    shapes: shapes.map(s => ({ x: s.x, y: s.y, r: s.r, kind: s.kind })),
+    hits,
+  });
+
+  reset();
+})();
+</script>
+</body>
+</html>
