@@ -1,8 +1,8 @@
 {
   "name": "dsh-bsk-fetch",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "icon": "./icon.svg",
-  "description": "用 bsk 驱动真实浏览器爬取带验证码的网站。简单验证码（Cloudflare Turnstile 复选框）自动点过；复杂验证码（hCaptcha 图片点选、reCAPTCHA 网格、滑块拼图）通过视觉后端判读 + 点击/拖拽自动解，失败时退回人工兜底。暴露 bsk_fetch、bsk_pass_captcha、bsk_solve_captcha、bsk_doctor 四个工具。以 vcb-s.com 为例。",
+  "description": "用 bsk 驱动真实浏览器爬取带验证码的网站（以 vcb-s.com 为例）。三档能力：Cloudflare Turnstile 复选框全自动；同源 canvas 图形点选/滑块由 agent 自己看图给坐标后合成点击，全自动；跨域 iframe 的 hCaptcha/reCAPTCHA 图片挑战只能人工。暴露 bsk_fetch、bsk_pass_captcha、bsk_doctor、bsk_solve_captcha、bsk_captcha_inspect、bsk_captcha_pick 六个工具。",
   "type": "module",
   "main": "lib/index.mjs",
   "exports": {
@@ -33,8 +33,7 @@
     "cloudflare",
     "turnstile",
     "hcaptcha",
-    "recaptcha",
-    "slider",
+    "canvas",
     "爬虫"
   ],
   "license": "MIT",

@@ -78,11 +78,15 @@ const complex = await import('./lib/complex.mjs')
   const sz = complex.pngSize(png)
   ok('pngSize 解析 IHDR 宽高', sz && sz.width === 5 && sz.height === 3)
   ok('pngSize 非 PNG 返回 null', complex.pngSize(Buffer.from([1, 2, 3])) === null)
-  ok('detectCaptcha 是函数', typeof complex.detectCaptcha === 'function')
-  ok('solveImageSelect 是函数', typeof complex.solveImageSelect === 'function')
-  ok('solveSlider 是函数', typeof complex.solveSlider === 'function')
-  ok('solveComplex 是函数', typeof complex.solveComplex === 'function')
-  ok('isSolved 是函数', typeof complex.isSolved === 'function')
+
+  // unwrapEval：bsk evaluate 返回信封 {ok,tab_id,value}，必须取 value
+  ok('unwrapEval 剥信封', JSON.stringify(complex.unwrapEval({ ok: true, tab_id: 't', value: { a: 1 } })) === '{"a":1}')
+  ok('unwrapEval 无 value 时原样返回', complex.unwrapEval({ ok: true }) === null || typeof complex.unwrapEval({ ok: true }) === 'object')
+  ok('unwrapEval 标量直通', complex.unwrapEval(7) === 7)
+
+  for (const fn of ['findCanvas', 'grabCanvas', 'clickCanvas', 'dragCanvas', 'inspectChallenge', 'pickPoints', 'detectCaptcha', 'solveImageSelect', 'solveSlider', 'solveComplex', 'isSolved', 'callVision']) {
+    ok(`${fn} 是函数`, typeof complex[fn] === 'function')
+  }
 }
 
 /* 5) index 入口 */
@@ -105,8 +109,18 @@ ok('index 导出 apply 函数', typeof mod.apply === 'function')
       fn({
         set(t) { tools.push(t) },
       })
-      // 四个工具都应被 set 进去（fetch/pass/doctor/solve）
-      assert.strictEqual(tools.length, 4, '应注册 4 个工具')
+      // 六个工具都应被 set 进去（fetch/pass/doctor/solve/inspect/pick）
+      assert.strictEqual(tools.length, 6, '应注册 6 个工具')
+      const names = tools.map((t) => t.name).sort()
+      assert.deepStrictEqual(names, [
+        'bsk_captcha_inspect', 'bsk_captcha_pick', 'bsk_doctor',
+        'bsk_fetch', 'bsk_pass_captcha', 'bsk_solve_captcha',
+      ], '工具名应完全匹配')
+      // 每个工具都要有 parameters 与 execute
+      for (const t of tools) {
+        assert.ok(t.parameters && typeof t.parameters === 'object', `${t.name} 应有 parameters`)
+        assert.strictEqual(typeof t.execute, 'function', `${t.name} 应有 execute`)
+      }
       return { dispose() {} }
     },
   }
