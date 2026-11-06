@@ -35,6 +35,8 @@ const { resolveConfig } = await import('./lib/config.mjs')
   ok('resolveConfig 修剪 outputDir', c.outputDir === '/tmp')
   const c2 = resolveConfig(undefined)
   ok('resolveConfig 缺省返回默认', c2.waitMs === 40000 && c2.rounds === 6)
+  ok('resolveConfig 默认 silentMs=16000', c2.silentMs === 16000)
+  ok('resolveConfig 读取 silentMs', resolveConfig({ silentMs: 9000 }).silentMs === 9000)
   // 视觉后端 + 人工兜底默认值
   const c3 = resolveConfig({ visionEndpoint: 'https://x', visionApiKey: 'k', visionModel: 'gpt-4o', humanFallback: false })
   ok('resolveConfig 读取 vision 配置', c3.visionEndpoint === 'https://x' && c3.visionApiKey === 'k' && c3.visionModel === 'gpt-4o')
@@ -137,6 +139,86 @@ ok('index 导出 apply 函数', typeof mod.apply === 'function')
   fs.writeFileSync(path.join(dir, 'probe.txt'), 'ok')
   ok('落盘目录可写', fs.existsSync(path.join(dir, 'probe.txt')))
   fs.rmSync(dir, { recursive: true, force: true })
+}
+
+/* 6) v0.2.2 回归：CF 反复点击 + 静默等待（确定性正/负向） */
+const { isChallenge, findCheckboxRef, passCaptchaWith } = await import('./lib/captcha.mjs')
+{
+  const CF = 'RootWebArea "Just a moment..."\n  Iframe "包含 Cloudflare 安全质询的小组件"\n    @e11 checkbox "请验证您是真人" [unchecked]'
+  const REAL = 'RootWebArea "Full article: Spatial Planning Reform in China"\n  @e1 link "Skip to Main Content"\n  @e97 link "Download PDF"'
+  ok('isChallenge 正向：Just a moment + 中文复选框', isChallenge(CF))
+  ok('isChallenge 正向：Are you a robot / Ray ID', isChallenge('Are you a robot? ... Ray ID: a5659'))
+  ok('isChallenge 负向：真实正文页', !isChallenge(REAL))
+  ok('isChallenge 负向：空输入', !isChallenge('') && !isChallenge(null))
+  ok('findCheckboxRef 正向取 @eN', findCheckboxRef(CF) === '@e11')
+  ok('findCheckboxRef 负向：正文页无复选框', findCheckboxRef(REAL) === null)
+
+  // 假 driver：前 3 次 snapshot 是质询页，第 4 次起放行；记录有序事件轨迹。
+  const events = []
+  let snapN = 0
+  const fake = {
+    snapshot: async () => { events.push('snapshot'); snapN++; return snapN <= 3 ? CF : REAL },
+    getSync: async () => { events.push('sync'); return { contextId: 'ctx1', observationId: 'obs1' } },
+    run: async (args) => {
+      events.push('click')
+      // 断言 ref 是位置参数、且带了 context + 顶层 observation
+      ok('click 带位置参数 ref / context / observation',
+        args.includes('@e11') && args.includes('--context') && args.includes('--observation'))
+      return { code: 0, stdout: 'click ok', stderr: '' }
+    },
+    sleep: async (ms) => { events.push('sleep:' + ms) },
+  }
+  const r = await passCaptchaWith(fake, 'sid', { waitMs: 40000, rounds: 8 })
+  ok('passCaptchaWith 反复点击后放行', r.passed === true && r.clicks === 3 && r.rounds === 4)
+  // 决定性不变量：每一轮只有 1 次 snapshot（轮首），静默窗口内没有任何 snapshot/sync/click。
+  const perRound = events.join('|')
+  const quietCount = events.filter((e) => e === 'sleep:16000').length
+  ok('静默等待 16000ms 且轮数正确', quietCount === 3)
+  ok('静默窗口内无页面读取（v0.2.1 回归点）',
+    events.filter((e) => e === 'snapshot').length === 4 &&   // 4 轮轮首各 1 次
+    events.filter((e) => e === 'sync').length === 3 &&       // 3 次点击各 1 次
+    !/snapshot\|[^|]*snapshot/.test(perRound))              // 任意两轮间无额外 snapshot
+  // 负向对照：始终质询 → 轮数用尽后 passed=false
+  const stuck = {
+    snapshot: async () => CF,
+    getSync: async () => ({ contextId: 'c', observationId: 'o' }),
+    run: async () => ({ code: 0, stdout: 'ok', stderr: '' }),
+    sleep: async () => {},
+  }
+  const r2 = await passCaptchaWith(stuck, 'sid', { silentMs: 1000, rounds: 3 })
+  ok('passCaptchaWith 负向：始终质询返回 passed=false', r2.passed === false && r2.clicks === 3)
+}
+
+/* 7) v0.2.2 回归：页内同源 fetch 二进制解析（正/负向） */
+const { parseFetchBinary } = await import('./lib/fetch.mjs')
+{
+  const pdf = Buffer.from('%PDF-1.4\n1 0 obj\n<<>>\nendobj\n')
+  const okBin = parseFetchBinary({ status: 200, ct: 'application/pdf', b64: pdf.toString('base64') })
+  ok('parseFetchBinary 正向 PDF', okBin.ext === 'pdf' && okBin.size === pdf.length && okBin.bytes.subarray(0, 4).toString() === '%PDF')
+  ok('parseFetchBinary 接受 JSON 字符串', parseFetchBinary(JSON.stringify({ status: 200, ct: 'application/pdf', b64: pdf.toString('base64') })).ext === 'pdf')
+  let threw = 0
+  for (const bad of [
+    { status: 403, b64: pdf.toString('base64') },
+    { status: 200, b64: Buffer.from('<!doctype html><html>OneTrust</html>').toString('base64'), ct: 'text/html' },
+    { status: 200, b64: '' },
+  ]) {
+    try { parseFetchBinary(bad) } catch { threw++ }
+  }
+  ok('parseFetchBinary 负向：403 / HTML 同意页 / 空字节全拒', threw === 3)
+}
+
+/* 8) v0.2.2 回归：sessionStop 用位置参数（bsk 0.4.x 不认 --session） */
+{
+  const src = fs.readFileSync(path.join(__dirname, 'lib', 'bsk.mjs'), 'utf8')
+  const m = src.match(/export async function sessionStop\(sessionId\)\s*\{([\s\S]*?)\}/)
+  const body = m ? m[1] : ''
+  ok('sessionStop 不带 --session（位置参数 SESSION_ID）',
+    !!m && body.includes("'session', 'stop'") &&
+    body.includes('sessionId') && !body.includes("'--session'"))
+  // getSync 取顶层 observation_id（不误取嵌套值）
+  const g = src.match(/export async function getSync[\s\S]*?\n\}/)
+  const gs = g ? g[0] : ''
+  ok('getSync 优先取顶层 j.observation_id', gs.includes('j.observation_id'))
 }
 
 console.log('')

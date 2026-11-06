@@ -172,7 +172,7 @@ hCaptcha 挑战在跨进程 iframe 里：
 ## 验证
 
 ```bash
-node --check lib/*.mjs && node selftest.mjs   # 离线：33 项全绿
+node --check lib/*.mjs && node selftest.mjs   # 离线自测全绿（含 CF 反复点击回归）
 ```
 
 真机冒烟（需 daemon 已起、浏览器连上）：
@@ -189,3 +189,59 @@ bsk_captcha_pick({"sessionId":"<id>","points":[[150,50]]})
 ## 许可
 
 MIT
+
+
+## 七、更新记录
+
+### 0.2.2（2026-11-07，bugfix：Cloudflare 托管质询真机可过）
+
+起因：外文期刊补查时用本插件思路过 tandfonline / ScienceDirect 的 Cloudflare
+质询失败——点完复选框后立刻回到「正在进行安全验证 / Ray ID」。真机逐轮取证后
+定位到两处实现缺陷，均在本版修正：
+
+1. **`lib/captcha.mjs`：点完立刻轮询 = 打断验证。** 旧 `passCaptcha` 每 1.5s 调
+   一次 `readState()`（内部 `evaluate` → `cooperate sync` + `evaluate`），在
+   Cloudflare「正在验证您是否是真人」窗口里反复同步/执行脚本，把挑战重置。
+   新逻辑：
+   - 挑战页判定与找复选框 `@eN` **一律只用 `bsk snapshot`**（aria 文本，只读、
+     不消耗 context），纯函数 `isChallenge()` / `findCheckboxRef()` 可离线断言；
+   - 点击前才取一次 `cooperate sync` 收据，`@eN` 作为 **位置参数** 传给 `click`，
+     并同时带 `--context` 与**顶层** `--observation`；
+   - 点完 **静默等待默认 16000ms**（`silentMs`），期间绝不做任何 snapshot /
+     sync / evaluate，让 CF 自行完成；
+   - 反复 2~4 轮直到 snapshot 不再是挑战页。真机日志：2 轮点击即放行到正文页。
+   核心流程拆成 `passCaptchaWith(driver, ...)` 工厂供 selftest 注入假 driver，
+   断言「静默窗口内没有任何页面读取动作」这一回归不变量。
+
+2. **`lib/bsk.mjs::getSync` 取错 observation_id。** bsk 0.4.x 的 `cooperate sync
+   --json` 同时有顶层 `observation_id` 与嵌套 `observation.observation_id`，
+   按键名字母序嵌套值先出现；旧正则取「第一个」= 嵌套值 → `evaluate` / `click-ref`
+   报 `pass the sync reply's top-level observation_id, not observation.observation_id`。
+   改为先 `JSON.parse` 取顶层，正则仅作解析失败兜底。
+
+3. **新增「放行后抓同源二进制」能力。** 真机结论：CF 放行后 `bsk download --ref`
+   因新窗口 `target=_blank` 报 `the browser download could not be attributed or
+   completed`，trusted click 又常报 `control context no longer belongs to the
+   current document`；只有页面内 `fetch(pdfPath)` → `arrayBuffer` → `btoa(base64)`
+   稳定拿到 `200 application/pdf`。`bsk_fetch` 新增可选参数 `fetchPath`，过验证码
+   后走这条链把 PDF 落盘并回传 `binaryPath/binarySize`；`parseFetchBinary()` 显式
+   拦截 OneTrust 同意弹窗 HTML（不把 HTML 当 PDF）。ScienceDirect 实测有效，
+   tandfonline 实测有效。
+
+4. **`lib/bsk.mjs::sessionStop` 参数形式错误。** bsk 0.4.x 的 `session stop` 把
+   `SESSION_ID` 作为**位置参数**，旧实现传 `--session <id>` 会报
+   `error: unexpected argument '--session' found`，导致过完验证码后无法正常收尾
+   切换会话。改为 `runOrThrow(['session', 'stop', sessionId])`，并在 selftest
+   加源码级断言固化。
+
+> 真机证据（会话 `docs/` 与 `data/foreign/_cf_d3.log`）：#04 / #19 两篇
+> tandfonline 文献经「反复点击 → 静默等待 → 页内同源 fetch」拿到 9 页 / 22 页真
+> PDF；插件自身 `passCaptcha` 真机日志 `passed=true clicks=1~2 rounds=3~6
+> secs=45~85`；全链路 E2E（插件自身模块：开会话→导航→过质询→`sessionStop`
+> 换会话→真实正文页判定→页内同源 fetch→`parseFetchBinary`）`E2E2_PASS`
+> `{"passed":true,"realPage":true,"pdf":true,"pdfSize":1105513}`；
+> 用户「反复点击肯定能通过」的判断成立。
+
+### 0.2.1
+
+更新依赖锁定文件；加 examples/ 联调脚本（mock 验证码页 + 两段式 e2e）。

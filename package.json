@@ -1,6 +1,6 @@
 {
   "name": "dsh-bsk-fetch",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "icon": "./icon.svg",
   "description": "用 bsk 驱动真实浏览器爬取带验证码的网站（以 vcb-s.com 为例）。三档能力：Cloudflare Turnstile 复选框全自动；同源 canvas 图形点选/滑块由 agent 自己看图给坐标后合成点击，全自动；跨域 iframe 的 hCaptcha/reCAPTCHA 图片挑战只能人工。暴露 bsk_fetch、bsk_pass_captcha、bsk_doctor、bsk_solve_captcha、bsk_captcha_inspect、bsk_captcha_pick 六个工具。",
   "type": "module",
