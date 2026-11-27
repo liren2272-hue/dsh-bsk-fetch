@@ -41,6 +41,23 @@ selftest.mjs     离线自测（node selftest.mjs）
 | `bsk_captcha_inspect` | **两段式第一步**：把挑战图导出成 PNG 并返回绝对路径，交给 agent 自己看图 |
 | `bsk_captcha_pick` | **两段式第二步**：按 agent 给的坐标点选并判定是否通过；`human=true` 走人工 |
 
+## v0.3.0：深度合并 dsh-cnki-dl
+
+原 `dsh-cnki-dl` 已并入本插件，卸载那张卡即同时撤销两类行为。工具总数 12 个：上面 6 个 `bsk_*` 加上
+`cnki_search`、`cnki_download`、`cnki_batch`、`cnki_verify`、`cnki_doctor`、`cnki_task_status`。
+
+两者共用**同一套 bsk 底座**：Python 下载器（cv2/numpy/PIL/rapidocr）保留在 `python/`，经新增的
+`lib/bsk-cli.mjs`（JSON-lines 桥）复用 `lib/bsk.mjs` 的会话与 CLI 封装；`python/core/bsk.py`
+已改为桥客户端，不再各自直调 bsk。新增配置项：
+
+| 键 | 说明 | 默认 |
+| --- | --- | --- |
+| `pythonExe` | Python 解释器（知网下载器依赖 OpenCV 等） | `python` |
+| `timeoutMs` | 单次知网命令超时（毫秒） | `120000` |
+| `wantFormat` | 下载格式 `pdf` / `caj` | `pdf` |
+
+> 合并后知网工具仍需本机 Python 与下载依赖；bsk 验证码工具仍是纯 Node，无 Python 依赖。
+
 ### agent 当视觉（推荐路径）
 
 模型本身能看图时，不需要配置 `visionEndpoint`。两步走：

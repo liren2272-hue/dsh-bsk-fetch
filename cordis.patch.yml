@@ -7,6 +7,10 @@
 #       waitMs: 40000
 #       rounds: 6
 #       outputDir: 'D:/data/bsk-fetch'
+#       # v0.3.0 起（深度合并 dsh-cnki-dl 后）：
+#       pythonExe: 'python'   # 知网下载器用的 Python 解释器
+#       timeoutMs: 120000     # 单次知网命令超时（毫秒）
+#       wantFormat: 'pdf'     # 下载格式：pdf / caj
 - insert:
     - id: dsh-bsk-fetch
       name: dsh-bsk-fetch

@@ -111,12 +111,14 @@ ok('index 导出 apply 函数', typeof mod.apply === 'function')
       fn({
         set(t) { tools.push(t) },
       })
-      // 六个工具都应被 set 进去（fetch/pass/doctor/solve/inspect/pick）
-      assert.strictEqual(tools.length, 6, '应注册 6 个工具')
+      // v0.3.0：六个 bsk_* + 六个 cnki_* 都应被 set 进去
+      assert.strictEqual(tools.length, 12, '应注册 12 个工具')
       const names = tools.map((t) => t.name).sort()
       assert.deepStrictEqual(names, [
         'bsk_captcha_inspect', 'bsk_captcha_pick', 'bsk_doctor',
         'bsk_fetch', 'bsk_pass_captcha', 'bsk_solve_captcha',
+        'cnki_batch', 'cnki_doctor', 'cnki_download',
+        'cnki_search', 'cnki_task_status', 'cnki_verify',
       ], '工具名应完全匹配')
       // 每个工具都要有 parameters 与 execute
       for (const t of tools) {
